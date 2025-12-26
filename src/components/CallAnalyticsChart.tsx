@@ -8,17 +8,16 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { day: "Mon", calls: 120 },
-  { day: "Tue", calls: 200 },
-  { day: "Wed", calls: 150 },
-  { day: "Thu", calls: 280 },
-  { day: "Fri", calls: 220 },
-  { day: "Sat", calls: 90 },
-  { day: "Sun", calls: 60 },
-];
+export type ChartData = {
+  day: string;
+  calls: number;
+};
 
-export default function CallAnalyticsChart() {
+type Props = {
+  data: ChartData[];
+};
+
+export default function CallAnalyticsChart({ data }: Props) {
   return (
     <div className="bg-white rounded-xl shadow p-6">
       <h2 className="text-xl font-semibold mb-4">
