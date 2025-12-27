@@ -18,19 +18,37 @@ export default function App() {
   const [chartData, setChartData] = useState(defaultData);
 
   const [email, setEmail] = useState("");
-  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [statusMessage, setStatusMessage] = useState<{
+    text: string;
+    type: "error" | "success" | "info";
+  } | null>(null);
 
   const handleSaveToSupabase = async () => {
+    setEmailError("");
+    setStatusMessage(null);
+
     if (!email) {
-      alert("Email is required");
+      setEmailError("Email is required");
       return;
     }
 
-    const { data: existing } = await supabase
+    if (!isValidEmail(email)) {
+      setEmailError("Invalid email address");
+      return;
+    }
+
+    const { data: existing, error: checkError } = await supabase
       .from("chart_data")
       .select("*")
       .eq("email", email)
-      .single();
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing data:", checkError);
+      setStatusMessage({ text: "Error checking existing data", type: "error" });
+      return;
+    }
 
     if (existing) {
       const overwrite = window.confirm(
@@ -40,21 +58,59 @@ export default function App() {
     }
 
     const { error } = await supabase.from("chart_data").upsert(
-  {
-    email,
-    values: chartData,
-  },
-  {
-    onConflict: "email",
-  }
-);
+      {
+        email,
+        values: chartData,
+      },
+      {
+        onConflict: "email",
+      }
+    );
 
 
     if (error) {
-      alert("Error saving data");
+      console.error("Error saving data:", error);
+      setStatusMessage({ text: "Error saving data", type: "error" });
     } else {
-      alert("Data saved successfully");
-      setShowEmailPrompt(false);
+      setStatusMessage({ text: `Data saved successfully for ${email}`, type: "success" });
+    }
+  };
+
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+  const handleLoadFromSupabase = async (targetEmail?: string) => {
+    setEmailError("");
+    setStatusMessage(null);
+
+    const emailToUse = targetEmail ?? email;
+    if (!emailToUse) {
+      setEmailError("Enter email first");
+      return;
+    }
+
+    if (!isValidEmail(emailToUse)) {
+      setEmailError("Invalid email address");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("chart_data")
+      .select("values")
+      .eq("email", emailToUse)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error loading data:", error);
+      setStatusMessage({ text: "Error loading data", type: "error" });
+      return;
+    }
+
+    if (data?.values) {
+      setChartData(data.values);
+      setEmail(emailToUse);
+      setStatusMessage({ text: `Loaded data for ${emailToUse}`, type: "success" });
+    } else {
+      setStatusMessage({ text: `No saved data exists for ${emailToUse}`, type: "error" });
     }
   };
 
@@ -97,52 +153,53 @@ export default function App() {
         {/* 4️⃣ SAVE BUTTON */}
         <button
           className="px-4 py-2 bg-indigo-600 text-white rounded"
-          onClick={() => setShowEmailPrompt(true)}
+          onClick={handleSaveToSupabase}
         >
           Save Changes
         </button>
 
-        {/* 5️⃣ EMAIL PROMPT */}
-        {showEmailPrompt && (
-          <div className="bg-white p-4 rounded shadow space-y-2">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              className="border p-2 w-full"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+        {/* 5️⃣ EMAIL INPUT & SAVE */}
+        <div className="bg-white p-4 rounded shadow space-y-2">
+          <input
+            type="email"
+            placeholder="Enter your email"
+            className="border p-2 w-full"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setEmailError("");
+              setStatusMessage(null);
+            }}
+          />
 
+          <div className="flex gap-2">
             <button
               className="px-4 py-2 bg-green-600 text-white rounded"
-              onClick={handleSaveToSupabase} 
+              onClick={handleSaveToSupabase}
             >
               Confirm Save
             </button>
+            <button
+              className="px-4 py-2 bg-gray-300 rounded"
+              onClick={() => setEmail("")}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div className="text-sm text-gray-600">Current email: <span className="font-medium">{email || "—"}</span></div>
+        {emailError && <div className="text-sm text-red-600">{emailError}</div>}
+        {statusMessage && (
+          <div className={`text-sm ${statusMessage.type === "error" ? "text-red-600" : statusMessage.type === "success" ? "text-green-600" : "text-gray-600"}`}>
+            {statusMessage.text}
           </div>
         )}
 
-        {/* ✅ 6️⃣ LOAD SAVED DATA BUTTON (PUT YOUR CODE HERE) */}
+        {/* ✅ 6️⃣ LOAD SAVED DATA BUTTON */}
         <button
           className="px-4 py-2 bg-gray-700 text-white rounded"
-          onClick={async () => {
-            if (!email) {
-              alert("Enter email first");
-              return;
-            }
-
-            const { data } = await supabase
-              .from("chart_data")
-              .select("values")
-              .eq("email", email)
-              .single();
-
-            if (data) {
-              setChartData(data.values);
-            } else {
-              alert("No saved data found");
-            }
-          }}
+          onClick={async () => await handleLoadFromSupabase()}
         >
           Load Saved Data
         </button>
