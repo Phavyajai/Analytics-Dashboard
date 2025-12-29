@@ -46,7 +46,7 @@ export default function App() {
         .from("chart_data")
         .select("values")
         .eq("email", storedEmail)
-        .single();
+        .maybeSingle();
 
       if (data?.values) {
         setChartData(data.values);
@@ -78,7 +78,7 @@ export default function App() {
       .from("chart_data")
       .select("values")
       .eq("email", email)
-      .single();
+      .maybeSingle();
 
     if (data?.values) {
       setPreviousValues(data.values);
@@ -92,11 +92,19 @@ export default function App() {
   const saveToSupabase = async () => {
     const now = new Date();
 
-    await supabase.from("chart_data").upsert({
+    await supabase
+  .from("chart_data")
+  .upsert(
+    {
       email,
       values: tempData,
-      updated_at: now.toISOString(),
-    });
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "email",
+    }
+  );
+
 
     setChartData(tempData);
     setActiveEmail(email);
