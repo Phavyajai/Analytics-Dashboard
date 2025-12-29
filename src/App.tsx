@@ -1,153 +1,191 @@
-import { useState } from "react";
-import CallAnalyticsChart, {
-  type ChartData,
-} from "./components/CallAnalyticsChart";
+import { useEffect, useState } from "react";
+import CallAnalyticsChart from "./components/CallAnalyticsChart";
+import EditChartModal from "./components/EditChartModel";
+import EmailPromptModal from "./components/EmailPromptModel";
+import OverwriteConfirmModal from "./components/OverwriteConfirmModel";
 import { supabase } from "./lib/supabase";
 
-const defaultData: ChartData[] = [
-  { day: "Mon", calls: 120 },
-  { day: "Tue", calls: 200 },
-  { day: "Wed", calls: 150 },
-  { day: "Thu", calls: 280 },
-  { day: "Fri", calls: 220 },
-  { day: "Sat", calls: 90 },
-  { day: "Sun", calls: 60 },
-];
+/* -------------------------
+   Constants
+--------------------------*/
+const DEFAULT_VALUES = [120, 180, 150, 210];
 
+const STORAGE_EMAIL_KEY = "active_email";
+const STORAGE_LAST_SAVED_KEY = "last_saved_at";
+
+/* -------------------------
+   App Component
+--------------------------*/
 export default function App() {
-  const [chartData, setChartData] = useState(defaultData);
+  /* Chart state */
+  const [chartData, setChartData] = useState<number[]>(DEFAULT_VALUES);
+  const [tempData, setTempData] = useState<number[]>(DEFAULT_VALUES);
 
+  /* UI state */
+  const [showEdit, setShowEdit] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  const [showOverwrite, setShowOverwrite] = useState(false);
+
+  /* User context */
   const [email, setEmail] = useState("");
-  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [activeEmail, setActiveEmail] = useState<string | null>(null);
+  const [previousValues, setPreviousValues] = useState<number[] | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  const handleSaveToSupabase = async () => {
+  /* -------------------------
+     Restore state on refresh
+  --------------------------*/
+  useEffect(() => {
+    const storedEmail = localStorage.getItem(STORAGE_EMAIL_KEY);
+    const storedSavedAt = localStorage.getItem(STORAGE_LAST_SAVED_KEY);
+
+    if (!storedEmail) return;
+
+    const loadSavedData = async () => {
+      const { data } = await supabase
+        .from("chart_data")
+        .select("values")
+        .eq("email", storedEmail)
+        .single();
+
+      if (data?.values) {
+        setChartData(data.values);
+        setTempData(data.values);
+        setActiveEmail(storedEmail);
+        setEmail(storedEmail);
+        setLastSavedAt(storedSavedAt);
+      }
+    };
+
+    loadSavedData();
+  }, []);
+
+  /* -------------------------
+     Edit → Save flow
+  --------------------------*/
+  const handleSaveFromEditor = () => {
+    setShowEdit(false);
+    setShowEmail(true);
+  };
+
+  const handleEmailConfirm = async () => {
     if (!email) {
-      alert("Email is required");
+      alert("Please enter an email");
       return;
     }
 
-    const { data: existing } = await supabase
+    const { data } = await supabase
       .from("chart_data")
-      .select("*")
+      .select("values")
       .eq("email", email)
       .single();
 
-    if (existing) {
-      const overwrite = window.confirm(
-        "Data already exists for this email. Overwrite?"
-      );
-      if (!overwrite) return;
-    }
-
-    const { error } = await supabase.from("chart_data").upsert(
-  {
-    email,
-    values: chartData,
-  },
-  {
-    onConflict: "email",
-  }
-);
-
-
-    if (error) {
-      alert("Error saving data");
+    if (data?.values) {
+      setPreviousValues(data.values);
+      setShowEmail(false);
+      setShowOverwrite(true);
     } else {
-      alert("Data saved successfully");
-      setShowEmailPrompt(false);
+      saveToSupabase();
     }
   };
 
+  const saveToSupabase = async () => {
+    const now = new Date();
+
+    await supabase.from("chart_data").upsert({
+      email,
+      values: tempData,
+      updated_at: now.toISOString(),
+    });
+
+    setChartData(tempData);
+    setActiveEmail(email);
+    setLastSavedAt(now.toLocaleString());
+
+    /* Persist across refresh */
+    localStorage.setItem(STORAGE_EMAIL_KEY, email);
+    localStorage.setItem(STORAGE_LAST_SAVED_KEY, now.toLocaleString());
+
+    setShowEmail(false);
+    setShowOverwrite(false);
+    setPreviousValues(null);
+  };
+
+  /* -------------------------
+     Render
+  --------------------------*/
   return (
     <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto">
 
-        {/* 1️⃣ Title */}
-        <h1 className="text-3xl font-bold">
-          Voice Agent Analytics
-        </h1>
+        {/* Dashboard Header */}
+        <div className="bg-white rounded-xl p-5 shadow-sm mb-6">
+          <h1 className="text-2xl font-semibold">
+            Analytics Dashboard
+          </h1>
 
-        {/* 2️⃣ Chart */}
-        <CallAnalyticsChart data={chartData} />
+          <p className="text-sm text-gray-500 mb-3">
+            Custom chart analytics with persisted user data
+          </p>
 
-        {/* 3️⃣ Edit Inputs */}
-        <div className="bg-white p-4 rounded shadow space-y-2">
-          <h3 className="font-semibold">Edit Call Values</h3>
-
-          {chartData.map((item, index) => (
-            <div key={item.day} className="flex items-center gap-2">
-              <span className="w-12">{item.day}</span>
-              <input
-                type="number"
-                className="border p-1 w-24"
-                value={item.calls}
-                onChange={(e) => {
-                  const updated = [...chartData];
-                  updated[index] = {
-                    ...item,
-                    calls: Number(e.target.value),
-                  };
-                  setChartData(updated);
-                }}
-              />
+          {activeEmail ? (
+            <div className="text-sm">
+              <div>
+                <span className="font-medium">Viewing data for:</span>{" "}
+                {activeEmail}
+              </div>
+              {lastSavedAt && (
+                <div className="text-gray-500">
+                  Last saved: {lastSavedAt}
+                </div>
+              )}
             </div>
-          ))}
+          ) : (
+            <div className="text-sm text-gray-400">
+              No user data loaded yet
+            </div>
+          )}
         </div>
 
-        {/* 4️⃣ SAVE BUTTON */}
-        <button
-          className="px-4 py-2 bg-indigo-600 text-white rounded"
-          onClick={() => setShowEmailPrompt(true)}
-        >
-          Save Changes
-        </button>
-
-        {/* 5️⃣ EMAIL PROMPT */}
-        {showEmailPrompt && (
-          <div className="bg-white p-4 rounded shadow space-y-2">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              className="border p-2 w-full"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-
-            <button
-              className="px-4 py-2 bg-green-600 text-white rounded"
-              onClick={handleSaveToSupabase} 
-            >
-              Confirm Save
-            </button>
-          </div>
-        )}
-
-        {/* ✅ 6️⃣ LOAD SAVED DATA BUTTON (PUT YOUR CODE HERE) */}
-        <button
-          className="px-4 py-2 bg-gray-700 text-white rounded"
-          onClick={async () => {
-            if (!email) {
-              alert("Enter email first");
-              return;
-            }
-
-            const { data } = await supabase
-              .from("chart_data")
-              .select("values")
-              .eq("email", email)
-              .single();
-
-            if (data) {
-              setChartData(data.values);
-            } else {
-              alert("No saved data found");
-            }
+        {/* Chart */}
+        <CallAnalyticsChart
+          data={chartData}
+          onEdit={() => {
+            setTempData(chartData);
+            setShowEdit(true);
           }}
-        >
-          Load Saved Data
-        </button>
-
+        />
       </div>
+
+      {/* Modals */}
+      {showEdit && (
+        <EditChartModal
+          values={tempData}
+          onChange={setTempData}
+          onSave={handleSaveFromEditor}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
+
+      {showEmail && (
+        <EmailPromptModal
+          email={email}
+          setEmail={setEmail}
+          onConfirm={handleEmailConfirm}
+        />
+      )}
+
+      {showOverwrite && previousValues && (
+        <OverwriteConfirmModal
+          previousValues={previousValues}
+          email={email}
+          onOverwrite={saveToSupabase}
+          onCancel={() => {
+            setShowOverwrite(false);
+            setPreviousValues(null);
+          }}
+        />
+      )}
     </div>
   );
 }
