@@ -8,7 +8,7 @@ import { supabase } from "./lib/supabase";
 /* -------------------------
    Constants
 --------------------------*/
-const DEFAULT_VALUES = [120, 180, 150, 210];
+const DEFAULT_VALUES = [220, 245, 230, 260, 240, 255];
 
 const STORAGE_EMAIL_KEY = "active_email";
 const STORAGE_LAST_SAVED_KEY = "last_saved_at";
